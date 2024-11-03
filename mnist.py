@@ -114,7 +114,7 @@ class Layer:
         # The size of the previous layer will be the number of rows of the weight matrix
 
         self.weights = [[random.random() for _ in range(dim)] for _ in range(prev_dim)]
-        self.biases = [random.random()]*dim
+        self.biases = [random.random() for _ in range(dim)]
 
         # z is the output of the neuron before applying the activation function
         self.z = [0]*dim
@@ -129,11 +129,11 @@ class Layer:
 
     def update_params(self):
         for i in range(self.dim):
-            self.biases[i] += self.bias_gradients[i]
+            self.biases[i] -= LEARNING_RATE * self.bias_gradients[i]
             self.bias_gradients[i] = 0
 
             for j in range(self.prev_dim):
-                self.weights[j][i] += self.weight_gradients[j][i]
+                self.weights[j][i] -= LEARNING_RATE * self.weight_gradients[j][i]
                 self.weight_gradients[j][i] = 0
 
     def set_input(self, input):
@@ -141,12 +141,16 @@ class Layer:
         assert(len(input) == self.dim)
 
         for i in range(self.dim):
-            self.activations[i] = sigmoid(input[i])
-
+            self.activations[i] = input[i]/255
     # Feed forward will take in the activations of the previous layer
     # And weights and biases of the connections between the previous layer and the current layer
     # And calculate the activations of the current layer
     def feed_forward_neuron(self, neuron_idx, input):
+        self.activations[neuron_idx] = 0
+        
+        # It is reset below anyway but just to make sure we don't change the code and messup later
+        self.z[neuron_idx] = 0
+
         # Input is the activations of the previous layer
         for i in range(self.prev_dim):
             self.activations[neuron_idx] += input[i]*self.weights[i][neuron_idx]
@@ -172,12 +176,12 @@ class Layer:
     def back_propagation_neuron(self, neuron_idx, gradient, new_gradient):
         # Update biases gradient
         bias_gradient = gradient * sigmoid_derivative(self.z[neuron_idx])
-        self.bias_gradients[neuron_idx] += LEARNING_RATE*bias_gradient
+        self.bias_gradients[neuron_idx] += bias_gradient
 
         # Update weights gradient
         for i in range(self.prev_dim):
             weight_gradient = sigmoid_derivative(self.z[neuron_idx]) * gradient * self.model.layers[self.idx-1].activations[i]
-            self.weight_gradients[i][neuron_idx] += LEARNING_RATE*weight_gradient
+            self.weight_gradients[i][neuron_idx] += weight_gradient
 
         # Calcuate new gradient for the previous layer
         for i in range(self.prev_dim):
@@ -234,7 +238,7 @@ class MNISTModel:
         result = [0]*10
         result[label] = 1
 
-        gradient = array_sub(result, self.layers[-1].activations)
+        gradient = [2 * (self.layers[-1].activations[i] - result[i]) for i in range(len(result))]
 
         # debug_print(result)
         # debug_print(self.layers[-1].activations)
