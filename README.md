@@ -4,7 +4,6 @@
      - [Gradient descent, how neural networks learn | Chapter 2, Deep learning](https://www.youtube.com/watch?v=IHZwWFHWa-w)
      - [What is backpropagation really doing? | Chapter 3, Deep learning](https://www.youtube.com/watch?v=Ilg3gGewQ5U)
 - Copilot was used to help with completion
-- Don't reference any code
 - Only 1 dep PIL - for parsing/displaying image
 
 # Notes
@@ -41,6 +40,7 @@
 
     ![Back propagation](back_prop.png)
 
+- Learning rate of `0.1` is considered too high but It seems to work for me ?
 
 # Pit Falls
 - Input need to be normalized 
@@ -53,3 +53,5 @@ self.biases = [random.random() for i in range(self.dim)]
 self.biases = [random()]*self.dim
 ~~~
 - Becareful with the sign of `gradient`
+- Fucking `sigmoid` function returns 1 from `30` or something making `activations` in the 1st hidden layer becomes all 1
+- Fuck fuck fuck how to initialize `weights` and `biases` is so important 

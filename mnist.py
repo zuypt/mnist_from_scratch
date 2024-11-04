@@ -1,9 +1,11 @@
+import sys
 import random
 from PIL import Image
 import math
 from struct import pack, unpack
+import pickle
 
-random.seed(1337)
+random.seed(1234)
 
 debug_print = print
 
@@ -11,11 +13,20 @@ LEARNING_RATE = 0.01
 
 # Sigmoid(0) == 0.5
 # So if we initialize the weights and biases to 0, the output of the neuron will be 0.5
-def sigmoid(x):
+def af(x):
+    # clip to prevent divide by zero
+    if x > 500:
+        x = 500
+
+    if x < -500:
+        x = -500
+    # return x if x > 0 else 0
     return 1 / (1 + math.exp(-x))
 
-def sigmoid_derivative(x):
-    return sigmoid(x)*(1 - sigmoid(x))
+def af_deri(x):
+    # return 1 if x > 0 else 0
+    s = af(x)
+    return s*(1 - s)
 
 def load_label(fname) -> list[int]:
     with open(fname, 'rb') as f:
@@ -101,6 +112,7 @@ def array_sub(a, b):
     return result
 
 
+
 class MNISTModel: ...
 
 class Layer:
@@ -113,8 +125,8 @@ class Layer:
         # The size of the current layer will be the number of columns of the weight matrix
         # The size of the previous layer will be the number of rows of the weight matrix
 
-        self.weights = [[random.random() for _ in range(dim)] for _ in range(prev_dim)]
-        self.biases = [random.random() for _ in range(dim)]
+        self.weights = [[random.uniform(-0.1, 0.1) for _ in range(dim)] for _ in range(prev_dim)]
+        self.biases = [random.uniform(0, 0.1) for _ in range(dim)]
 
         # z is the output of the neuron before applying the activation function
         self.z = [0]*dim
@@ -124,10 +136,15 @@ class Layer:
         self.bias_gradients = [0]*dim
         self.weight_gradients = [[0 for _ in range(dim)] for _ in range(prev_dim)]
 
-    def init(self):
-        pass
+    def average_gradients(self):
+        for i in range(self.dim):
+            self.bias_gradients[i] /= BATCH_SIZE
+
+            for j in range(self.prev_dim):
+                self.weight_gradients[j][i] /= BATCH_SIZE
 
     def update_params(self):
+        # debug_print('self.bias_gradients: ', self.bias_gradients)
         for i in range(self.dim):
             self.biases[i] -= LEARNING_RATE * self.bias_gradients[i]
             self.bias_gradients[i] = 0
@@ -141,11 +158,12 @@ class Layer:
         assert(len(input) == self.dim)
 
         for i in range(self.dim):
-            self.activations[i] = input[i]/255
+            self.activations[i] = normalize_input(input[i])
+        # debug_print(self.activations)
     # Feed forward will take in the activations of the previous layer
     # And weights and biases of the connections between the previous layer and the current layer
     # And calculate the activations of the current layer
-    def feed_forward_neuron(self, neuron_idx, input):
+    def feed_forward_neuron(self, neuron_idx, input_d):
         self.activations[neuron_idx] = 0
         
         # It is reset below anyway but just to make sure we don't change the code and messup later
@@ -153,16 +171,21 @@ class Layer:
 
         # Input is the activations of the previous layer
         for i in range(self.prev_dim):
-            self.activations[neuron_idx] += input[i]*self.weights[i][neuron_idx]
+            # debug_print(f'input[i]: {input_d[i]}')
+            # debug_print(f'self.weights[i][neuron_idx]: {self.weights[i][neuron_idx]}')
+            # debug_print(f'self.activations[neuron_idx]: {self.activations[neuron_idx]}')
+            self.activations[neuron_idx] += input_d[i]*self.weights[i][neuron_idx]
         
+
         # Add the bias
+        # debug_print(f'self.activations[neuron_idx]: {self.activations[neuron_idx]}')
         self.activations[neuron_idx] += self.biases[neuron_idx]
 
         # Save the output of the neuron before applying the activation function
         self.z[neuron_idx] = self.activations[neuron_idx]
 
         # Apply the activation function
-        self.activations[neuron_idx] = sigmoid(self.activations[neuron_idx])
+        self.activations[neuron_idx] = af(self.activations[neuron_idx])
 
     def feed_forward(self, input):
         assert(self.idx > 0)
@@ -170,22 +193,23 @@ class Layer:
         for i in range(self.dim):
             self.feed_forward_neuron(i, input)
 
-
     # Gradient is the value idealy we want to add to the activation of this neuron
     # In math term it is the derivative of the cost function with respect to the activation of this neuron
     def back_propagation_neuron(self, neuron_idx, gradient, new_gradient):
-        # Update biases gradient
-        bias_gradient = gradient * sigmoid_derivative(self.z[neuron_idx])
-        self.bias_gradients[neuron_idx] += bias_gradient
+        # Calculate delta
+        delta = gradient * af_deri(self.z[neuron_idx])
 
-        # Update weights gradient
-        for i in range(self.prev_dim):
-            weight_gradient = sigmoid_derivative(self.z[neuron_idx]) * gradient * self.model.layers[self.idx-1].activations[i]
-            self.weight_gradients[i][neuron_idx] += weight_gradient
+        # Accumulate bias gradient
+        self.bias_gradients[neuron_idx] += delta
 
-        # Calcuate new gradient for the previous layer
+        # Accumulate weight gradients and compute new gradient for previous layer
         for i in range(self.prev_dim):
-            new_gradient[i] += self.weights[i][neuron_idx] * sigmoid_derivative(self.z[neuron_idx]) * gradient
+            activation_prev = self.model.layers[self.idx-1].activations[i]
+            self.weight_gradients[i][neuron_idx] += delta * activation_prev
+
+            # Accumulate new gradient for previous layer
+            new_gradient[i] += self.weights[i][neuron_idx] * delta
+
 
     # Gradient is the desired change in the activations of the current layer
     def back_propagation(self, gradient):
@@ -215,6 +239,7 @@ class MNISTModel:
     def feed_forward(self):
         for i in range(1, len(self.layers)):
             self.layers[i].feed_forward(self.layers[i-1].activations)
+            # debug_print(f'layer {i}: {self.layers[i].activations}')
 
     def train(self):
         pass
@@ -244,58 +269,107 @@ class MNISTModel:
         # debug_print(self.layers[-1].activations)
  
         for i in range(len(self.layers)-1, 0, -1):
-            debug_print('gradient: ', gradient)
+            # debug_print('gradient: ', gradient)
             gradient = self.layers[i].back_propagation(gradient)
 
     def update_params(self):
         for i in range(1, len(self.layers)):
             self.layers[i].update_params()
 
-# Set to 1 for debugging
-BATCH_SIZE = 1
+    def get_result_label(self):
+        return self.layers[-1].activations.index(max(self.layers[-1].activations))
 
-if __name__ == '__main__':
+# Set to 1 for debugging
+BATCH_SIZE = 10
+
+RUNNING = True
+
+def normalize_input(n):
+    return (n * (2.0 / 255.0)) - 1.0
+
+def train():
+    global RUNNING
+    global BATCH_SIZE
+
     labels = load_label('data\\train-labels.idx1-ubyte')
     images = load_image('data\\train-images.idx3-ubyte')
 
     training_data = list(zip(images, labels))
 
     # Create a training batch
-    random.shuffle(training_data)
+    if len(sys.argv) == 3:
+        model_file = sys.argv[2]
+        with open(model_file, 'rb') as f:
+            model = pickle.load(f)
+    else:
+        model = MNISTModel()
 
-    model = MNISTModel()
-    for i in range(0, len(training_data), BATCH_SIZE):
-        batch = training_data[i:i+BATCH_SIZE]
+    while RUNNING:
+        random.shuffle(training_data)
+        for batch_idx in range(0, len(training_data), BATCH_SIZE):
+            try:
+                debug_print(f'Batch {batch_idx}/{len(training_data)}')
+                batch = training_data[batch_idx:batch_idx+BATCH_SIZE]
 
-        debug_print(batch[0][1])
+                # debug_print(batch[0][1])
 
-        for image, label in batch:
+                for image, label in batch:
+                    model.set_input(image)
+                    # debug_print('input: ', model.layers[0].activations)
+                    model.feed_forward()
+            
+                    # debug_print('output: ', model.layers[-1].activations)
+                    debug_print('cost: ', model.cost(label))
+                    model.back_propagation(label)
+
+                    # Test to make sure that const function is actually decreasing
+                    
+                    # model.update_params()
+                    # model.set_input(image)
+                    # debug_print('input: ', model.layers[0].activations)
+                    # model.feed_forward()
+                    # debug_print('output: ', model.layers[-1].activations)
+                    # debug_print('cost: ', model.cost(label))
+
+                    # input('>')
+
+                # Now we to average the gradients and update the weights and biases
+                # If we have keyboard interrupt here ignore it because it will break our model
+                try:
+                    for i in range(1, len(model.layers)):
+                        model.layers[i].average_gradients()
+
+                    for i in range(1, len(model.layers)):
+                        model.layers[i].update_params()
+                except KeyboardInterrupt:
+                    pass
+            except KeyboardInterrupt:
+                RUNNING = False
+                break
+
+    with open('model.pkl', 'wb') as f:
+        pickle.dump(model, f)    
+
+if __name__ == '__main__':
+    if sys.argv[1] == 't':
+        train()
+
+    elif sys.argv[1] == 'i':
+        with open(sys.argv[2], 'rb') as f:
+            model = pickle.load(f)
+
+        labels = load_label('data\\t10k-labels.idx1-ubyte')
+        images = load_image('data\\t10k-images.idx3-ubyte')
+
+        test_data = list(zip(images, labels))
+        random.shuffle(test_data)
+        for image, label in test_data:
+            display_image(image)
             model.set_input(image)
-            # debug_print('input: ', model.layers[0].activations)
             model.feed_forward()
-    
-            debug_print('output: ', model.layers[-1].activations)
+            model.print_output()
+            debug_print('predict:', model.get_result_label())
+            debug_print('label: ', label)
             debug_print('cost: ', model.cost(label))
-            model.back_propagation(label)
-            model.update_params()
 
-            model.set_input(image)
-            # debug_print('input: ', model.layers[0].activations)
-            model.feed_forward()
-
-            debug_print('output: ', model.layers[-1].activations)
-            debug_print('cost: ', model.cost(label))
-            break
-
-        break
-
-
-    # display_image(images[2])
-
-    # model = MNISTModel()
-    # model.set_input(images[2])
-    # model.print_input()
-    # model.feed_forward()
-    # model.print_output()
-    # debug_print('label: ', labels[2])
-    # debug_print('cost: ', model.cost(labels[2]))
+            input('>')
