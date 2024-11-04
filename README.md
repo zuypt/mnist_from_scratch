@@ -3,6 +3,7 @@
      - [But what is a neuron network? | Chapter 1, Deep learning](https://www.youtube.com/watch?v=aircAruvnKk&t=147s)
      - [Gradient descent, how neural networks learn | Chapter 2, Deep learning](https://www.youtube.com/watch?v=IHZwWFHWa-w)
      - [What is backpropagation really doing? | Chapter 3, Deep learning](https://www.youtube.com/watch?v=Ilg3gGewQ5U)
+     - [Backpropagation calculus | Chapter 4, Deep learning](https://www.youtube.com/watch?v=tIeHLnjs5U8&t=114s)
 - Copilot was used to help with completion
 - Only 1 dep PIL - for parsing/displaying image
 
@@ -38,7 +39,11 @@
 
 - Back propagation
 
-    ![Back propagation](back_prop.png)
+    ![Back propagation 0](back_prop_0.png)
+
+    ![Back propagation 1](back_prop.png)
+
+    ![Back propagation 2](back_prop_2.png)
 
 - Learning rate of `0.1` is considered too high but It seems to work for me ?
 
@@ -54,4 +59,8 @@ self.biases = [random()]*self.dim
 ~~~
 - Becareful with the sign of `gradient`
 - Fucking `sigmoid` function returns 1 from `30` or something making `activations` in the 1st hidden layer becomes all 1
-- Fuck fuck fuck how to initialize `weights` and `biases` is so important 
+- My model finally converges
+- It turns out how we initialize normalizing `input`, intializing `weights` and `biases` and choosing `activation function` is really important.
+- The `sigmoid` function resolution is really shitty `sigmoid(40)` is already 1
+- It's really important to get the math right in `back_propagation_neuron` right in order for your model to converge.
+- Try to invent something with your basic intuition wouldn't work
