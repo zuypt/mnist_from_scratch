@@ -7,6 +7,22 @@
 - Copilot was used to help with completion
 - Only 1 dep PIL - for parsing/displaying image
 
+# Usage
+- To predict on test set
+~~~
+py -3 mnist.py -i model.pkl
+~~~
+
+- To train 
+
+~~~
+py -3 mnist.py -t [optional_starting_model]
+~~~
+
+
+# TODO
+- Add visualization of the layer
+
 # Notes
 - Download mnist dataset from https://www.kaggle.com/datasets/hojjatk/mnist-dataset?resource=download
 - Figureout the dataset format
