@@ -9,7 +9,7 @@ random.seed(1234)
 
 debug_print = print
 
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.001
 
 # Sigmoid(0) == 0.5
 # So if we initialize the weights and biases to 0, the output of the neuron will be 0.5
@@ -304,11 +304,12 @@ def train():
     else:
         model = MNISTModel()
 
+    count = 0
     while RUNNING:
         random.shuffle(training_data)
         for batch_idx in range(0, len(training_data), BATCH_SIZE):
             try:
-                debug_print(f'Batch {batch_idx}/{len(training_data)}')
+                # debug_print(f'Batch {batch_idx}/{len(training_data)}')
                 batch = training_data[batch_idx:batch_idx+BATCH_SIZE]
 
                 # debug_print(batch[0][1])
@@ -319,10 +320,13 @@ def train():
                     model.feed_forward()
             
                     # debug_print('output: ', model.layers[-1].activations)
-                    debug_print('cost: ', model.cost(label))
+                    count += 1
+                    if count == 500:
+                        count = 0
+                        debug_print('cost: ', model.cost(label))
                     model.back_propagation(label)
 
-                    # Test to make sure that const function is actually decreasing
+                    # Test to make sure that const functi       on is actually decreasing
                     
                     # model.update_params()
                     # model.set_input(image)
