@@ -3,6 +3,8 @@ import sys, os
 import math
 import pickle
 import numpy as np
+import curses
+import pygame
 
 from typing import List
 from struct import pack, unpack
@@ -17,7 +19,7 @@ def null(*args):
 # debug_print = print
 debug_print = null
 
-BATCH_SIZE = 10
+BATCH_SIZE = 64
 MNIST_DIM = (784, 16, 16, 10)
 LEARNING_RATE = 0.01
 
@@ -74,11 +76,22 @@ def sigmoid_deri(input: np.ndarray[np.float64]):
 af = sigmoid
 af_deri = sigmoid_deri
 
-def display_image(image):
+def display_grayscale(image):
     # display the image using PIL
     img = Image.new('L', (28, 28))
     img.putdata(image)
     img = img.resize((128, 128), Image.Resampling.LANCZOS)
+    img.show()
+
+def display_rgb(image):
+
+    
+    pixel_data = [tuple(pixel) for pixel in image.reshape(-1, 3)]  # Convert each row to a tuple
+    
+    # display the image using PIL
+    img = Image.new('RGB', (28, 28))
+    img.putdata(pixel_data)
+    img = img.resize((128, 128), Image.Resampling.NEAREST)
     img.show()
 
 class LinearLayer:
@@ -232,6 +245,41 @@ class MNISTModel:
     def get_result_label(self):
         return np.argmax(self.layers[-1].activations)
 
+    def visualize(self):
+        model = self
+
+        layer_1 = model.layers[1]
+        layer_2 = model.layers[2]
+        layer_3 = model.layers[3]
+        
+        # print(f'{layer_1.weights.shape=}')
+        # print(f'{layer_2.weights.shape=}')
+        
+        for i in range(16):
+            pass
+            # pygame_disp_rbg(normalize_to_rgb(layer_1.weights[i]).reshape(28, 28, 3), 30*(i//4), (30*i)%120)
+
+        layer_1_visual = np.zeros((16, 784))
+        for i in range(16):
+            for j in range(16):
+                layer_1_visual[i] += layer_1.weights[j]*layer_2.weights[i][j]     
+            # pygame_disp_rbg(normalize_to_rgb(layer_1_visual[i]).reshape(28, 28, 3), 30*(i//4), (30*i)%120)
+            
+        layer_2_visual = np.zeros((10, 784))
+        for i in range(10):
+            for j in range(16):
+                layer_2_visual[i] += layer_1_visual[j]*layer_3.weights[i][j]
+            pygame_disp_rbg(normalize_to_rgb(layer_2_visual[i]).reshape(28, 28, 3), 30*(i//4), (30*i)%120)
+
+        # running = True
+        # clock = pygame.time.Clock()
+        # while running:
+        #     for event in pygame.event.get():
+        #         if event.type == pygame.QUIT:
+        #             running = False
+        #     clock.tick(30)
+        # pygame.quit()
+
 RUNNING = True
 def train():
     global RUNNING
@@ -291,6 +339,9 @@ def train():
                         model.layers[i].update_params()
                 except KeyboardInterrupt:
                     pass
+                
+                model.visualize()
+                pygame.event.get()
             except KeyboardInterrupt:
                 RUNNING = False
                 break
@@ -300,37 +351,279 @@ def train():
         pickle.dump(model, f)    
 
 
+def inference():
+    with open(sys.argv[2], 'rb') as f:
+        model = pickle.load(f)
+
+    labels = load_label(os.path.join('data', 't10k-labels.idx1-ubyte'))
+    images = load_image(os.path.join('data', 't10k-images.idx3-ubyte'))
+
+    test_data = list(zip(images, labels))
+    random.shuffle(test_data)
+    for image, label in test_data:
+        display_grayscale(image)
+        model.set_input(image)
+        model.feed_forward()
+        model.print_output()
+        print('predict:', model.get_result_label())
+        print('label: ', label)
+        print('cost: ', model.cost(label))
+
+        input('>')
+
+
+def normalize_to_grayscale(weights):
+    """
+    Normalize an array of weights to grayscale [0, 255].
+    
+    Parameters:
+    -----------
+    weights : numpy.ndarray
+        A NumPy array (or similar) of floating-point weight values.
+    
+    Returns:
+    --------
+    np.ndarray
+        A NumPy array of uint8 values in [0, 255] representing grayscale.
+    """
+    # Convert to a NumPy array if it's not already
+    weights = np.array(weights, dtype=np.float64)
+    
+    w_min = np.min(weights)
+    w_max = np.max(weights)
+    
+    # If all weights are identical, avoid division by zero:
+    if np.isclose(w_min, w_max):
+        return np.full_like(weights, 128, dtype=np.uint8)
+    
+    # Normalize to [0,1]
+    normalized = (weights - w_min) / (w_max - w_min)
+    # Scale to [0,255]
+    grayscale = (normalized * 255).astype(np.uint8)
+    
+    return grayscale
+
+def normalize_to_rgb(weights):
+    """
+    Map an array of floating-point values to RGB colors:
+      - Negative values -> Green channel (the more negative, the brighter)
+      - Positive values -> Red channel  (the more positive, the brighter)
+      - Zero -> Black
+
+    Parameters
+    ----------
+    weights : array-like
+        A NumPy array (or similar) of floating-point weight values.
+
+    Returns
+    -------
+    np.ndarray
+        A NumPy array of shape (..., 3) with dtype=np.uint8, 
+        where each entry is an [R, G, B] color.
+    """
+    # Convert to float64 NumPy array
+    weights = np.array(weights, dtype=np.float64)
+
+    # Prepare output with shape (..., 3) for RGB
+    # e.g. for a 2D weights array shape=(H, W), output shape=(H, W, 3)
+    output_shape = weights.shape + (3,)
+    rgb = np.zeros(output_shape, dtype=np.uint8)
+
+    # Handle the case where all values are zero to avoid a divide-by-zero
+    max_abs = np.max(np.abs(weights))
+    if np.isclose(max_abs, 0.0):
+        return rgb  # already zero => black
+
+    # Compute brightness as a fraction of the max absolute value
+    # brightness[i] = 255 * |weights[i]| / max_abs
+    brightness = np.abs(weights) / max_abs * 255
+    brightness = brightness.astype(np.uint8)
+
+    # Create boolean masks
+    neg_mask = (weights < 0)
+    pos_mask = (weights > 0)
+
+    # For negative values, fill the Green channel with brightness
+    rgb[neg_mask, 1] = brightness[neg_mask]
+    # For positive values, fill the Red channel with brightness
+    rgb[pos_mask, 0] = brightness[pos_mask]
+    # Zero stays black [0,0,0]
+
+    return rgb
+
+
+def disp_grayscale(stdscr, arr: np.ndarray, x=0, y=0):
+    if arr.shape != (28, 28):
+        raise ValueError("Array must be exactly 28×28.")
+
+    # The standard xterm 24-step grayscale range:
+    # 232 = near-black ... 255 = near-white
+    start_gray = 232
+    end_gray   = 255
+    num_levels = end_gray - start_gray + 1  # typically 24
+
+    # Initialize color pairs for these 24 grayscale steps
+    max_pairs = curses.COLOR_PAIRS
+    usable_pairs = min(max_pairs - 1, num_levels)  # e.g. up to 24
+    for i in range(usable_pairs):
+        color_idx = start_gray + i
+        if color_idx > end_gray:
+            break
+        # pair i+1 => (foreground=COLOR_BLACK, background=color_idx)
+        curses.init_pair(i+1, curses.COLOR_BLACK, color_idx)
+
+    # Draw each pixel (two spaces wide)
+    for row in range(28):
+        for col in range(28):
+            val = int(arr[row, col]) & 0xFF  # clamp to [0..255]
+
+            # Map val (0..255) to a grayscale level in 0..(num_levels-1)
+            # e.g. val=0 -> 0 (dark), val=255 -> num_levels-1 (light)
+            level = (val * num_levels) // 256
+            if level == num_levels:
+                level = num_levels - 1
+
+            # Also ensure we don't exceed 'usable_pairs'
+            level = min(level, usable_pairs - 1)
+
+            pair_id = level + 1
+            try:
+                stdscr.addstr(row+x, (col+y) * 2, "  ", curses.color_pair(pair_id))
+            except curses.error:
+                # If the terminal is too small and we go out of bounds
+                pass
+
+    stdscr.refresh()
+
+
+COLOR_MAP = {}  # Maps color_index to a curses pair ID
+
+def rgb_to_256_color_index(r, g, b):
+    # If the pixel is black, return curses' black color index
+    if r == 0 and g == 0 and b == 0:
+        return -1
+    # Otherwise, use the 6x6x6 color cube conversion.
+    r6 = r * 6 // 256
+    g6 = g * 6 // 256
+    b6 = b * 6 // 256
+    return 16 + 36 * r6 + 6*g6 + b6
+
+def curse_disp_rgb(stdscr, arr: np.ndarray, x=0, y=0):
+    """
+    Display a 28×28×3 RGB NumPy array in curses using the 256-color palette.
+
+    Parameters
+    ----------
+    stdscr : curses.window
+        The curses window object.
+    arr : np.ndarray
+        A 28×28×3 array of RGB data in [0..255].
+    x : int
+        Top row offset in the curses window.
+    y : int
+        Left column offset in the curses window.
+    """
+    # 1. Validate shape
+    if arr.shape != (28, 28, 3):
+        raise ValueError("Input array must be exactly 28×28×3 for RGB.")
+
+    # 2. Prepare for color mapping
+    pair_id_counter = 1
+    max_pairs = curses.COLOR_PAIRS  # Total pairs supported by terminal
+
+    # 3. Draw each pixel
+    for row in range(28):
+        for col in range(28):
+            r, g, b = arr[row, col]
+
+
+            color_idx = rgb_to_256_color_index(r, g, b)
+
+            # If we haven't seen this color_idx, create a new color pair (foreground=black)
+            if color_idx not in COLOR_MAP:
+                if pair_id_counter < max_pairs:
+                    print (color_idx)
+                    curses.init_pair(pair_id_counter, curses.COLOR_BLACK, color_idx)
+                    COLOR_MAP[color_idx] = pair_id_counter
+                    pair_id_counter += 1
+                else:
+                    assert(False)
+
+            pair_id = COLOR_MAP[color_idx]
+
+            # Safely attempt to add the colored text
+            try:
+                # Multiply col by 2 to widen each cell to 2 spaces
+                stdscr.addstr(x + row, (y + col) * 2, "@@", curses.color_pair(pair_id))
+            except curses.error:
+                raise Exception("Terminal too small to display image.")
+
+# Initialize Pygame once in your program.
+pygame.init()
+_display_initialized = False
+_screen = None
+
+def init_screen(scale=10, grid_cols=4, grid_rows=4):
+    """
+    Initializes the global display. The screen size will be large enough
+    to contain a grid of squares of size 28x28 scaled by `scale`.
+    """
+    global _display_initialized, _screen
+    width = 30 * scale * grid_cols
+    height = 30 * scale * grid_rows
+    _screen = pygame.display.set_mode((width, height))
+    pygame.display.set_caption("Pygame 4x4 Grid")
+    _display_initialized = True
+
+def pygame_disp_rbg(rgb_array, pos_x, pos_y, scale=6):
+    """
+    Draws a 28x28 RGB image using Pygame at a given starting (x,y) position.
+    The drawing is non-blocking and updates the display immediately.
+    
+    Parameters:
+        rgb_array (np.ndarray): A NumPy array of shape (28, 28, 3) with dtype uint8.
+        pos_x (int): The x-coordinate (in grid units, not pixels) where the square will be drawn.
+        pos_y (int): The y-coordinate (in grid units, not pixels) where the square will be drawn.
+        scale (int): Scaling factor to enlarge the 28x28 image for better visibility.
+                     Default is 10.
+                     
+    The screen is assumed to be large enough to contain a 4x4 grid of squares.
+    """
+    global _display_initialized, _screen
+
+    # Ensure the image is a 28x28x3 array.
+    rgb_array = np.array(rgb_array, dtype=np.uint8)
+    if rgb_array.shape != (28, 28, 3):
+        raise ValueError("Input array must have shape (28, 28, 3)")
+
+    # Initialize the screen if it hasn't been created yet.
+    if not _display_initialized:
+        # The grid is fixed at 4x4 squares.
+        init_screen(scale=scale, grid_cols=4, grid_rows=4)
+
+    # Create a surface from the image.
+    # Note: pygame.surfarray.make_surface expects an array of shape (width, height, 3)
+    # so we need to transpose our array from (height, width, 3).
+    surface = pygame.surfarray.make_surface(np.transpose(rgb_array, (1, 0, 2)))
+    # Scale the surface.
+    window_square_size = (28 * scale, 28 * scale)
+    surface = pygame.transform.scale(surface, window_square_size)
+
+    # Convert grid coordinates (pos_x, pos_y) to pixel coordinates.
+    pixel_x = pos_x*scale
+    pixel_y = pos_y*scale
+
+    # Blit the image onto the screen at the computed position.
+    _screen.blit(surface, (pixel_x, pixel_y))
+    pygame.display.update(pygame.Rect(pixel_x, pixel_y, window_square_size[0], window_square_size[1]))
+
+    
 if __name__ == '__main__':
     if sys.argv[1] == 't':
         train()
     
-    elif sys.argv[1] == 'test':
-        model = MNISTModel()
-
-        labels = load_label('data\\t10k-labels.idx1-ubyte')
-        images = load_image('data\\t10k-images.idx3-ubyte')
-
-        model.set_input(images[0])
-        model.feed_forward()
-
-        model.print_output()
-
     elif sys.argv[1] == 'i':
-        with open(sys.argv[2], 'rb') as f:
-            model = pickle.load(f)
-
-        labels = load_label(os.path.join('data', 't10k-labels.idx1-ubyte'))
-        images = load_image(os.path.join('data', 't10k-images.idx3-ubyte'))
-
-        test_data = list(zip(images, labels))
-        random.shuffle(test_data)
-        for image, label in test_data:
-            display_image(image)
-            model.set_input(image)
-            model.feed_forward()
-            model.print_output()
-            print('predict:', model.get_result_label())
-            print('label: ', label)
-            print('cost: ', model.cost(label))
-
-            input('>')
+        inference()
+        
+    elif sys.argv[1] == 'v':
+        visualize()
